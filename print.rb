@@ -17,6 +17,7 @@ response = basic_connection.post do |req|
   req.url "/api/v1/me/keys"
   req.headers["Accept"]       = "application/json"
   req.headers["Content-Type"] = "application/json"
+  req.body = JSON.generate({ description: "AmigoBooth Print Service" })
 end
 
 token = JSON.parse(response.body)["token"]
