@@ -2,6 +2,7 @@ require "json"
 require "faraday"
 require "timeout"
 require "highline/import"
+require "fileutils"
 
 class Client
 
@@ -64,6 +65,8 @@ class Client
 
     puts "\n ### Watching '#{events.detect{|e| e["id"] == event_id_to_print}["name"]}' for prints ###"
 
+    print_ids = []
+
     loop do
       response = token_connection.get do |req|
         req.url "/api/v1/me/events/#{event_id_to_print}/prints"
@@ -72,9 +75,27 @@ class Client
         req.headers["X-AmigoBooth-Token"] = token
       end
 
-      shots_to_print = JSON.parse response.body
-      if shots_to_print.any?
-        puts "Pulled #{shots_to_print.count} to print."
+      prints = JSON.parse response.body
+      if prints.any?
+        puts "\nProcessing #{prints.count} prints in the queue."
+
+        prints.reject{|p| print_ids.include? p["id"] }.each do |print|
+          puts "\n Downloading shot ##{print["shot"]["id"]} from #{print["shot"]["photo"]["edited_url"]}"
+          response = Faraday.get print["shot"]["photo"]["edited_url"]
+          FileUtils.mkdir_p "prints"
+          File.open(%(prints/#{print["id"]}.jpg), 'w') { |f| f.write(response.body) }
+
+          puts "Adding ##{print["id"]} to the print queue"
+          `lp #{File.expand_path(%(prints/#{print["id"]}.jpg))}`
+
+          puts "Removing ##{print["shot"]["id"]} from remote queue"
+          response = token_connection.delete do |req|
+            req.url "/api/v1/me/events/#{event_id_to_print}/prints/#{print["id"]}"
+            req.headers["Accept"]       = "application/json"
+            req.headers["Content-Type"] = "application/json"
+            req.headers["X-AmigoBooth-Token"] = token
+          end
+        end
       end
       sleep 5
     end
